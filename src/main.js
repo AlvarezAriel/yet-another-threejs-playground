@@ -98,41 +98,40 @@ function init() {
         } );
 
         // helper
-        const helper = new LightProbeHelper(lightProbe, 1);
-        scene.add(helper);
+        // const helper = new LightProbeHelper(lightProbe, 1);
+        // scene.add(helper);
+
+        // gui
+        gui = renderer.inspector.createParameters('Intensity');
+
+        gui.add(API, 'lightProbeIntensity', 0, 1, 0.02)
+            .name('light probe')
+            .onChange(function () {
+
+                lightProbe.intensity = API.lightProbeIntensity;
+
+            });
+
+        gui.add(API, 'directionalLightIntensity', 0, 1, 0.02)
+            .name('directional light')
+            .onChange(function () {
+
+                directionalLight.intensity = API.directionalLightIntensity;
+
+            });
+
+        gui.add(API, 'envMapIntensity', 0, 1, 0.02)
+            .name('envMap')
+            .onChange(function () {
+
+                for(let i = 0; i < meshes.length; ++i) {
+                    let mesh = meshes[i];
+                    console.log(mesh);
+                    mesh.material.envMapIntensity = API.envMapIntensity;
+                }
+            });
 
     });
-
-
-    // gui
-    gui = renderer.inspector.createParameters('Intensity');
-
-    gui.add(API, 'lightProbeIntensity', 0, 1, 0.02)
-        .name('light probe')
-        .onChange(function () {
-
-            lightProbe.intensity = API.lightProbeIntensity;
-
-        });
-
-    gui.add(API, 'directionalLightIntensity', 0, 1, 0.02)
-        .name('directional light')
-        .onChange(function () {
-
-            directionalLight.intensity = API.directionalLightIntensity;
-
-        });
-
-    gui.add(API, 'envMapIntensity', 0, 1, 0.02)
-        .name('envMap')
-        .onChange(function () {
-
-            for(let i = 0; i < meshes.length; ++i) {
-                let mesh = meshes[i];
-                console.log(mesh);
-                mesh.material.envMapIntensity = API.envMapIntensity;
-            }
-        });
 
     // listener
     window.addEventListener('resize', onWindowResize);
