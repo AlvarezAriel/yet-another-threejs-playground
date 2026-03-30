@@ -7,6 +7,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 let renderer, scene, camera;
 
+const basePath = "/yet-another-threejs-playground"
+
 let gui;
 
 let lightProbe;
@@ -36,14 +38,15 @@ function init() {
     document.body.appendChild(renderer.domElement);
 
     // tone mapping
-    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMapping = THREE.LinearToneMapping;
+    renderer.setClearColor(new THREE.Color( 0x000000 ))
 
     // scene
     scene = new THREE.Scene();
 
     // camera
     camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 1000);
-    camera.position.set(0, 0, 4);
+    camera.position.set(-8, 10, 11);
 
     // controls
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -52,86 +55,36 @@ function init() {
     controls.enablePan = false;
 
     // probe
-    lightProbe = new THREE.LightProbe();
-    scene.add(lightProbe);
-
     // light
-    directionalLight = new THREE.DirectionalLight(0xffffff, API.directionalLightIntensity);
-    directionalLight.position.set(10, 10, 10);
-    scene.add(directionalLight);
+    // directionalLight = new THREE.DirectionalLight(0xffffff, API.directionalLightIntensity);
+    // directionalLight.position.set(10, 10, 10);
+    // scene.add(directionalLight);
 
-    // envmap
-    const genCubeUrls = function (prefix, postfix) {
+    loader.load( basePath + '/RolCanela.glb', function ( gltf ) {
+        gltf.scene.scale.set(5, 5, 5);
+        console.error( gltf.scene );
+        meshes = gltf.scene.children;
 
-        return [
-            prefix + 'px' + postfix, prefix + 'nx' + postfix,
-            prefix + 'py' + postfix, prefix + 'ny' + postfix,
-            prefix + 'pz' + postfix, prefix + 'nz' + postfix
-        ];
+        scene.add( gltf.scene );
+    }, undefined, function ( error ) {
+        console.error( error );
+    } );
 
-    };
+    // helper
+    // const helper = new LightProbeHelper(lightProbe, 1);
+    // scene.add(helper);
 
-    const urls = genCubeUrls('pisa/', '.png');
+    // gui
+    gui = renderer.inspector.createParameters('Intensity');
 
-    new THREE.CubeTextureLoader().load(urls, function (cubeTexture) {
+    // gui.add(API, 'directionalLightIntensity', 0, 1, 0.02)
+    //     .name('directional light')
+    //     .onChange(function () {
+    //
+    //         directionalLight.intensity = API.directionalLightIntensity;
+    //
+    //     });
 
-        scene.background = cubeTexture;
-
-        lightProbe.copy(LightProbeGenerator.fromCubeTexture(cubeTexture));
-        lightProbe.intensity = API.lightProbeIntensity;
-        lightProbe.position.set(-10, 0, 0); // position not used in scene lighting calculations (helper honors the position, however)
-
-        loader.load( 'sandwich.glb', function ( gltf ) {
-            gltf.scene.scale.set(10, 10, 10);
-            console.error( gltf.scene );
-            meshes = gltf.scene.children;
-
-            scene.add( gltf.scene );
-
-            for(let i = 0; i < meshes.length; ++i) {
-                let mesh = meshes[i];
-                mesh.material.envMap = cubeTexture;
-                mesh.material.envMapIntensity = API.envMapIntensity;
-            }
-        }, undefined, function ( error ) {
-            console.error( error );
-        } );
-
-        // helper
-        // const helper = new LightProbeHelper(lightProbe, 1);
-        // scene.add(helper);
-
-        // gui
-        gui = renderer.inspector.createParameters('Intensity');
-
-        gui.add(API, 'lightProbeIntensity', 0, 1, 0.02)
-            .name('light probe')
-            .onChange(function () {
-
-                lightProbe.intensity = API.lightProbeIntensity;
-
-            });
-
-        gui.add(API, 'directionalLightIntensity', 0, 1, 0.02)
-            .name('directional light')
-            .onChange(function () {
-
-                directionalLight.intensity = API.directionalLightIntensity;
-
-            });
-
-        gui.add(API, 'envMapIntensity', 0, 1, 0.02)
-            .name('envMap')
-            .onChange(function () {
-
-                for(let i = 0; i < meshes.length; ++i) {
-                    let mesh = meshes[i];
-                    console.log(mesh);
-                    mesh.material.envMapIntensity = API.envMapIntensity;
-                }
-            });
-
-    });
 
     // listener
     window.addEventListener('resize', onWindowResize);
