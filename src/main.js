@@ -21,7 +21,7 @@ let currentModel = null;
 
 // 🔹 Estado UI
 const params = {
-    model: 'canela'
+    model: 'RolCanela'
 };
 
 const loader = new GLTFLoader();
