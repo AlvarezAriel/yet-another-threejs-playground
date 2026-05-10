@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite'
+import { svelte } from '@sveltejs/vite-plugin-svelte'
 
 export default defineConfig({
-    base: 'yet-another-threejs-playground',
+    base: '/yet-another-threejs-playground/',
+    plugins: [svelte()],
 })
