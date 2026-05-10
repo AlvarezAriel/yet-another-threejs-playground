@@ -1,18 +1,12 @@
 import * as THREE from 'three/webgpu';
+import WebGPU from 'three/addons/capabilities/WebGPU.js';
 import {Inspector} from 'three/addons/inspector/Inspector.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
-import {LightProbeGenerator} from 'three/addons/lights/LightProbeGenerator.js';
-import {LightProbeHelper} from 'three/addons/helpers/LightProbeHelperGPU.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 let renderer, scene, camera;
 
 const basePath = "/yet-another-threejs-playground"
-
-let gui;
-
-let lightProbe;
-let directionalLight;
 
 // linear color space
 const API = {
@@ -29,8 +23,10 @@ init();
 
 function init() {
 
-    // renderer
-    renderer = new THREE.WebGPURenderer({antialias: true});
+    // renderer — WebGPU by default, fall back to WebGL2 when unsupported
+    const forceWebGL = !WebGPU.isAvailable();
+    renderer = new THREE.WebGPURenderer({antialias: true, forceWebGL});
+    console.info(`Renderer backend: ${forceWebGL ? 'WebGL2' : 'WebGPU'}`);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setAnimationLoop(animate);
@@ -54,12 +50,6 @@ function init() {
     controls.maxDistance = 30;
     controls.enablePan = false;
 
-    // probe
-    // light
-    // directionalLight = new THREE.DirectionalLight(0xffffff, API.directionalLightIntensity);
-    // directionalLight.position.set(10, 10, 10);
-    // scene.add(directionalLight);
-
     loader.load( basePath + '/RolCanela.glb', function ( gltf ) {
         gltf.scene.scale.set(5, 5, 5);
         console.error( gltf.scene );
@@ -69,22 +59,6 @@ function init() {
     }, undefined, function ( error ) {
         console.error( error );
     } );
-
-    // helper
-    // const helper = new LightProbeHelper(lightProbe, 1);
-    // scene.add(helper);
-
-    // gui
-    gui = renderer.inspector.createParameters('Intensity');
-
-    // gui.add(API, 'directionalLightIntensity', 0, 1, 0.02)
-    //     .name('directional light')
-    //     .onChange(function () {
-    //
-    //         directionalLight.intensity = API.directionalLightIntensity;
-    //
-    //     });
-
 
     // listener
     window.addEventListener('resize', onWindowResize);
