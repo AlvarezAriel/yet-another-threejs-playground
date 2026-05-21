@@ -31,6 +31,7 @@ export function createViewer() {
     let envMap = null;
     let hdriEnabled = true;
     let hdriBackground = false;
+    let hdriAffectsAll = false;
 
     function applyHdri() {
         scene.environment = hdriEnabled ? envMap : null;
@@ -109,21 +110,27 @@ export function createViewer() {
     let currentRoot = null;
 
     function disposeRoot(root) {
+        const textures = new Set();
+        const materials = new Set();
         root.traverse((obj) => {
             if (obj.geometry) obj.geometry.dispose?.();
-            const mats = Array.isArray(obj.material) ? obj.material : obj.material ? [obj.material] : [];
-            for (const m of mats) {
-                for (const k of Object.keys(m)) {
-                    const v = m[k];
-                    if (v && v.isTexture) v.dispose();
-                }
-                m.dispose?.();
-            }
+            const collect = (m) => { if (m) materials.add(m); };
+            if (Array.isArray(obj.material)) obj.material.forEach(collect); else collect(obj.material);
+            if (obj.userData.pbrMaterial) (Array.isArray(obj.userData.pbrMaterial) ? obj.userData.pbrMaterial : [obj.userData.pbrMaterial]).forEach(collect);
+            if (obj.userData.basicMaterial) (Array.isArray(obj.userData.basicMaterial) ? obj.userData.basicMaterial : [obj.userData.basicMaterial]).forEach(collect);
         });
+        for (const m of materials) {
+            for (const k of Object.keys(m)) {
+                const v = m[k];
+                if (v && v.isTexture) textures.add(v);
+            }
+        }
+        for (const t of textures) t.dispose();
+        for (const m of materials) m.dispose?.();
     }
 
     function toAlbedo(material) {
-        const basic = new THREE.MeshBasicMaterial({
+        return new THREE.MeshBasicMaterial({
             map: material.map ?? null,
             color: material.color ? material.color.clone() : new THREE.Color(0xffffff),
             transparent: material.transparent === true,
@@ -133,10 +140,17 @@ export function createViewer() {
             side: material.side ?? THREE.FrontSide,
             vertexColors: material.vertexColors === true,
         });
-        if (material.map) material.map = null;
-        if (material.alphaMap) material.alphaMap = null;
-        material.dispose?.();
-        return basic;
+    }
+
+    function applyHdriMaterials(root) {
+        root.traverse((obj) => {
+            if (!obj.isMesh) return;
+            const pbr = obj.userData.pbrMaterial;
+            const basic = obj.userData.basicMaterial;
+            if (!pbr || !basic) return;
+            const useHdri = hdriAffectsAll || usesHdri(obj);
+            obj.material = useHdri ? pbr : basic;
+        });
     }
 
     function frameObject(object, fill = 1.5) {
@@ -173,11 +187,13 @@ export function createViewer() {
         }
         gltf.scene.traverse((obj) => {
             if (!obj.isMesh) return;
-            if (usesHdri(obj)) return;
-            obj.material = Array.isArray(obj.material)
-                ? obj.material.map(toAlbedo)
-                : toAlbedo(obj.material);
+            const original = obj.material;
+            obj.userData.pbrMaterial = original;
+            obj.userData.basicMaterial = Array.isArray(original)
+                ? original.map(toAlbedo)
+                : toAlbedo(original);
         });
+        applyHdriMaterials(gltf.scene);
         gltf.scene.scale.set(5, 5, 5);
         scene.add(gltf.scene);
         currentRoot = gltf.scene;
@@ -207,7 +223,12 @@ export function createViewer() {
         backend: forceWebGL ? 'WebGL2' : 'WebGPU',
         setHdriEnabled(v) { hdriEnabled = !!v; applyHdri(); },
         setHdriBackground(v) { hdriBackground = !!v; applyHdri(); },
+        setHdriAffectsAll(v) {
+            hdriAffectsAll = !!v;
+            if (currentRoot) applyHdriMaterials(currentRoot);
+        },
         get hdriEnabled() { return hdriEnabled; },
         get hdriBackground() { return hdriBackground; },
+        get hdriAffectsAll() { return hdriAffectsAll; },
     };
 }

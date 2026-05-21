@@ -29,6 +29,7 @@
 
     let hdriEnabled = $state(true);
     let hdriBackground = $state(false);
+    let hdriAffectsAll = $state(false);
 
     function toggleHdri(e) {
         hdriEnabled = e.target.checked;
@@ -38,6 +39,11 @@
     function toggleHdriBackground(e) {
         hdriBackground = e.target.checked;
         viewer.setHdriBackground(hdriBackground);
+    }
+
+    function toggleHdriAffectsAll(e) {
+        hdriAffectsAll = e.target.checked;
+        viewer.setHdriAffectsAll(hdriAffectsAll);
     }
 
     let fileInput = $state();
@@ -161,6 +167,15 @@
                         onchange={toggleHdriBackground}
                     />
                     <span>Show as background</span>
+                </label>
+                <label class="toggle" class:disabled={!hdriEnabled}>
+                    <input
+                        type="checkbox"
+                        checked={hdriAffectsAll}
+                        disabled={!hdriEnabled}
+                        onchange={toggleHdriAffectsAll}
+                    />
+                    <span>Apply to all meshes</span>
                 </label>
 
                 <div
