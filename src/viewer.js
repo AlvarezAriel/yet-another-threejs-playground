@@ -11,6 +11,11 @@ function usesHdri(obj) {
     return HDRI_NAME_PREFIXES.some((p) => obj.name?.startsWith(p));
 }
 
+function isMobile() {
+    return typeof window !== 'undefined'
+        && window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
+}
+
 export function createViewer() {
     const forceWebGL = !WebGPU.isAvailable();
     const renderer = new THREE.WebGPURenderer({ antialias: true, forceWebGL });
@@ -18,7 +23,7 @@ export function createViewer() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.toneMapping = THREE.LinearToneMapping;
     renderer.setClearColor(new THREE.Color(0x000000));
-    renderer.inspector = new Inspector();
+    if (!isMobile()) renderer.inspector = new Inspector();
     document.body.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();

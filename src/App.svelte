@@ -17,12 +17,15 @@
         { id: 'burger',              name: 'Burger',              url: base + '12_burger.glb' },
     ];
 
+    const isMobile = typeof window !== 'undefined'
+        && window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
+
     let custom = $state([]);
     let models = $derived([...builtIn, ...custom]);
     let activeId = $state(null);
     let status = $state('idle');
     let error = $state(null);
-    let collapsed = $state(false);
+    let collapsed = $state(isMobile);
 
     let hdriEnabled = $state(true);
     let hdriBackground = $state(false);
@@ -375,4 +378,23 @@
     .toggle input { accent-color: #a855f7; cursor: pointer; }
     .toggle.disabled { opacity: 0.5; cursor: not-allowed; }
     .toggle.disabled input { cursor: not-allowed; }
+
+    @media (max-width: 768px), (pointer: coarse) {
+        .panel {
+            top: 12px;
+            right: 12px;
+            left: 12px;
+            width: auto;
+            max-height: calc(100vh - 24px);
+        }
+        .panel.collapsed {
+            left: auto;
+            width: auto;
+        }
+        .ghost {
+            width: 32px;
+            height: 32px;
+            font-size: 18px;
+        }
+    }
 </style>
