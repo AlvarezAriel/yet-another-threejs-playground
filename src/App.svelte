@@ -10,6 +10,7 @@
         { id: 'gastro-salmon',       name: 'Gastro Salmon',       url: base + '05_Gastro_salmon.glb' },
         { id: 'gastro-vegetable',    name: 'Gastro Vegetable',    url: base + '06_Gastro%20vegetable.glb' },
         { id: 'croissant',           name: 'Croissant',           url: base + '07_Croissant.glb' },
+        { id: 'croissant-cycles',    name: 'Croissant (Cycles)',  url: base + '07_Croissant_Cycles.glb' },
         { id: 'pizza',               name: 'Pizza',               url: base + '08_Pizza.glb' },
         { id: 'bobun',               name: 'Bobun',               url: base + '09_Bobun.glb' },
         { id: 'cesar',               name: 'Cesar',               url: base + '10_cesar.glb' },
