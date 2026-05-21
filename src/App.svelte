@@ -3,8 +3,18 @@
 
     const base = import.meta.env.BASE_URL;
     const builtIn = [
-        { id: 'rol-canela', name: 'Rol de Canela', url: base + 'RolCanela.glb' },
-        { id: 'sandwich',   name: 'Sandwich',     url: base + 'sandwich.glb'   },
+        { id: 'gateau-praline',      name: 'Gateau Praline',      url: base + '01_Gateau_praline.glb' },
+        { id: 'cheesecake-maracuya', name: 'Cheesecake Maracuya', url: base + '02_Cheesecakemaracuya.glb' },
+        { id: 'financier-pistache',  name: 'Financier Pistache',  url: base + '03_Financier_pistache.glb' },
+        { id: 'gastro-canard',       name: 'Gastro Canard',       url: base + '04_Gastro_canard.glb' },
+        { id: 'gastro-salmon',       name: 'Gastro Salmon',       url: base + '05_Gastro_salmon.glb' },
+        { id: 'gastro-vegetable',    name: 'Gastro Vegetable',    url: base + '06_Gastro%20vegetable.glb' },
+        { id: 'croissant',           name: 'Croissant',           url: base + '07_Croissant.glb' },
+        { id: 'pizza',               name: 'Pizza',               url: base + '08_Pizza.glb' },
+        { id: 'bobun',               name: 'Bobun',               url: base + '09_Bobun.glb' },
+        { id: 'cesar',               name: 'Cesar',               url: base + '10_cesar.glb' },
+        { id: 'nouilles-chicken',    name: 'Nouilles Chicken',    url: base + '11_Nouilles%20chicken.glb' },
+        { id: 'burger',              name: 'Burger',              url: base + '12_burger.glb' },
     ];
 
     let custom = $state([]);
@@ -13,6 +23,19 @@
     let status = $state('idle');
     let error = $state(null);
     let collapsed = $state(false);
+
+    let hdriEnabled = $state(true);
+    let hdriBackground = $state(false);
+
+    function toggleHdri(e) {
+        hdriEnabled = e.target.checked;
+        viewer.setHdriEnabled(hdriEnabled);
+    }
+
+    function toggleHdriBackground(e) {
+        hdriBackground = e.target.checked;
+        viewer.setHdriBackground(hdriBackground);
+    }
 
     let fileInput = $state();
 
@@ -93,6 +116,23 @@
                         </li>
                     {/each}
                 </ul>
+            </div>
+
+            <div class="group">
+                <div class="group-label">HDRI</div>
+                <label class="toggle">
+                    <input type="checkbox" checked={hdriEnabled} onchange={toggleHdri} />
+                    <span>Enable HDRI</span>
+                </label>
+                <label class="toggle" class:disabled={!hdriEnabled}>
+                    <input
+                        type="checkbox"
+                        checked={hdriBackground}
+                        disabled={!hdriEnabled}
+                        onchange={toggleHdriBackground}
+                    />
+                    <span>Show as background</span>
+                </label>
             </div>
 
             <button class="cta" onclick={() => fileInput.click()}>
@@ -316,4 +356,23 @@
         color: rgba(168, 85, 247, 0.9);
         font-weight: 600;
     }
+
+    .toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        color: rgba(232, 234, 238, 0.85);
+        font-size: 12px;
+        cursor: pointer;
+        margin-bottom: 4px;
+        transition: background 140ms ease, border-color 140ms ease;
+    }
+    .toggle:hover { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.1); }
+    .toggle input { accent-color: #a855f7; cursor: pointer; }
+    .toggle.disabled { opacity: 0.5; cursor: not-allowed; }
+    .toggle.disabled input { cursor: not-allowed; }
 </style>
