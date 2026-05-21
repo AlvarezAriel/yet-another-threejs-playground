@@ -58,9 +58,16 @@ export function createViewer() {
     const ROTATE_SPEED = 0.006;
     const WORLD_UP = new THREE.Vector3(0, 1, 0);
     const MAX_TILT = (80 * Math.PI) / 180;
+    const MIN_TILT = -0.5;
 
     let modelYaw = 0;
     let modelTilt = 0;
+    let lastYaw = 0;
+    let lastTilt = 0;
+    let yawVel = 0;
+    let tiltVel = 0;
+    const INERTIA_DECAY = 0.88;
+    const INERTIA_EPSILON = 0.00005;
     const tiltAxis = new THREE.Vector3(1, 0, 0);
     const qYaw = new THREE.Quaternion();
     const qTilt = new THREE.Quaternion();
@@ -70,6 +77,31 @@ export function createViewer() {
         qYaw.setFromAxisAngle(WORLD_UP, modelYaw);
         qTilt.setFromAxisAngle(tiltAxis, modelTilt);
         currentRoot.quaternion.multiplyQuaternions(qTilt, qYaw);
+    }
+
+    function updateInertia() {
+        if (!currentRoot) return;
+        if (canvasPointer.id !== null) {
+            yawVel = modelYaw - lastYaw;
+            tiltVel = modelTilt - lastTilt;
+            lastYaw = modelYaw;
+            lastTilt = modelTilt;
+            return;
+        }
+        if (Math.abs(yawVel) < INERTIA_EPSILON && Math.abs(tiltVel) < INERTIA_EPSILON) {
+            lastYaw = modelYaw;
+            lastTilt = modelTilt;
+            return;
+        }
+        modelYaw += yawVel;
+        const nextTilt = Math.max(MIN_TILT, Math.min(MAX_TILT, modelTilt + tiltVel));
+        if (nextTilt === MAX_TILT || nextTilt === MIN_TILT) tiltVel = 0;
+        modelTilt = nextTilt;
+        yawVel *= INERTIA_DECAY;
+        tiltVel *= INERTIA_DECAY;
+        lastYaw = modelYaw;
+        lastTilt = modelTilt;
+        applyModelOrientation();
     }
 
     const canvasPointer = { id: null, x: 0, y: 0 };
@@ -88,7 +120,7 @@ export function createViewer() {
         canvasPointer.x = e.clientX;
         canvasPointer.y = e.clientY;
         modelYaw += dx * ROTATE_SPEED;
-        modelTilt = Math.max(-MAX_TILT, Math.min(MAX_TILT, modelTilt + dy * ROTATE_SPEED));
+        modelTilt = Math.max(MIN_TILT, Math.min(MAX_TILT, modelTilt + dy * ROTATE_SPEED));
         applyModelOrientation();
     });
     const endCanvasDrag = (e) => {
@@ -201,6 +233,10 @@ export function createViewer() {
 
         modelYaw = 0;
         modelTilt = 0;
+        lastYaw = 0;
+        lastTilt = 0;
+        yawVel = 0;
+        tiltVel = 0;
         tiltAxis.setFromMatrixColumn(camera.matrixWorld, 0);
         tiltAxis.y = 0;
         if (tiltAxis.lengthSq() < 1e-6) tiltAxis.set(1, 0, 0);
@@ -215,7 +251,10 @@ export function createViewer() {
         camera.updateProjectionMatrix();
     });
 
-    renderer.setAnimationLoop(() => renderer.render(scene, camera));
+    renderer.setAnimationLoop(() => {
+        updateInertia();
+        renderer.render(scene, camera);
+    });
 
     return {
         loadModel,
