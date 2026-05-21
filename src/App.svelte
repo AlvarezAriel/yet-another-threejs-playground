@@ -42,6 +42,32 @@
 
     let fileInput = $state();
 
+    let camPadPointer = null;
+    let camPadLast = { x: 0, y: 0 };
+
+    function onCamPadDown(e) {
+        if (camPadPointer !== null) return;
+        camPadPointer = e.pointerId;
+        camPadLast.x = e.clientX;
+        camPadLast.y = e.clientY;
+        e.currentTarget.setPointerCapture(e.pointerId);
+    }
+
+    function onCamPadMove(e) {
+        if (e.pointerId !== camPadPointer) return;
+        const dx = e.clientX - camPadLast.x;
+        const dy = e.clientY - camPadLast.y;
+        camPadLast.x = e.clientX;
+        camPadLast.y = e.clientY;
+        viewer.rotateCameraBy(dx, dy);
+    }
+
+    function onCamPadUp(e) {
+        if (e.pointerId !== camPadPointer) return;
+        camPadPointer = null;
+        e.currentTarget.releasePointerCapture?.(e.pointerId);
+    }
+
     async function select(model) {
         if (model.id === activeId && status !== 'error') return;
         activeId = model.id;
@@ -136,6 +162,20 @@
                     />
                     <span>Show as background</span>
                 </label>
+
+                <div
+                    class="cam-pad"
+                    role="slider"
+                    aria-label="Drag to rotate environment"
+                    tabindex="0"
+                    onpointerdown={onCamPadDown}
+                    onpointermove={onCamPadMove}
+                    onpointerup={onCamPadUp}
+                    onpointercancel={onCamPadUp}
+                >
+                    <span class="cam-pad-label">Rotate environment</span>
+                    <span class="cam-pad-hint">drag</span>
+                </div>
             </div>
 
             <button class="cta" onclick={() => fileInput.click()}>
@@ -378,6 +418,35 @@
     .toggle input { accent-color: #a855f7; cursor: pointer; }
     .toggle.disabled { opacity: 0.5; cursor: not-allowed; }
     .toggle.disabled input { cursor: not-allowed; }
+
+    .cam-pad {
+        margin-top: 6px;
+        height: 70px;
+        border-radius: 10px;
+        border: 1px dashed rgba(168, 85, 247, 0.35);
+        background:
+            radial-gradient(circle at 50% 50%, rgba(168, 85, 247, 0.12), transparent 70%),
+            rgba(255, 255, 255, 0.02);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        cursor: grab;
+        touch-action: none;
+        user-select: none;
+        color: rgba(232, 234, 238, 0.85);
+        transition: background 140ms ease, border-color 140ms ease;
+    }
+    .cam-pad:hover { border-color: rgba(168, 85, 247, 0.55); }
+    .cam-pad:active { cursor: grabbing; background: rgba(168, 85, 247, 0.12); }
+    .cam-pad-label { font-size: 12px; font-weight: 500; }
+    .cam-pad-hint {
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: rgba(232, 234, 238, 0.45);
+    }
 
     @media (max-width: 768px), (pointer: coarse) {
         .panel {

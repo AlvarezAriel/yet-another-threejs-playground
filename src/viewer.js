@@ -50,6 +50,60 @@ export function createViewer() {
     controls.minDistance = 1;
     controls.maxDistance = 30;
     controls.enablePan = false;
+    controls.enableRotate = false;
+    controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: null };
+    controls.touches = { ONE: null, TWO: THREE.TOUCH.DOLLY_PAN };
+
+    const ROTATE_SPEED = 0.006;
+    const WORLD_UP = new THREE.Vector3(0, 1, 0);
+    const MAX_TILT = (80 * Math.PI) / 180;
+
+    let modelYaw = 0;
+    let modelTilt = 0;
+    const tiltAxis = new THREE.Vector3(1, 0, 0);
+    const qYaw = new THREE.Quaternion();
+    const qTilt = new THREE.Quaternion();
+
+    function applyModelOrientation() {
+        if (!currentRoot) return;
+        qYaw.setFromAxisAngle(WORLD_UP, modelYaw);
+        qTilt.setFromAxisAngle(tiltAxis, modelTilt);
+        currentRoot.quaternion.multiplyQuaternions(qTilt, qYaw);
+    }
+
+    const canvasPointer = { id: null, x: 0, y: 0 };
+    renderer.domElement.style.touchAction = 'none';
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+        if (!currentRoot || canvasPointer.id !== null) return;
+        canvasPointer.id = e.pointerId;
+        canvasPointer.x = e.clientX;
+        canvasPointer.y = e.clientY;
+        renderer.domElement.setPointerCapture(e.pointerId);
+    });
+    renderer.domElement.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== canvasPointer.id || !currentRoot) return;
+        const dx = e.clientX - canvasPointer.x;
+        const dy = e.clientY - canvasPointer.y;
+        canvasPointer.x = e.clientX;
+        canvasPointer.y = e.clientY;
+        modelYaw += dx * ROTATE_SPEED;
+        modelTilt = Math.max(-MAX_TILT, Math.min(MAX_TILT, modelTilt + dy * ROTATE_SPEED));
+        applyModelOrientation();
+    });
+    const endCanvasDrag = (e) => {
+        if (e.pointerId !== canvasPointer.id) return;
+        canvasPointer.id = null;
+        renderer.domElement.releasePointerCapture?.(e.pointerId);
+    };
+    renderer.domElement.addEventListener('pointerup', endCanvasDrag);
+    renderer.domElement.addEventListener('pointercancel', endCanvasDrag);
+
+    let hdriYaw = 0;
+    function rotateCameraBy(dx) {
+        hdriYaw -= dx * ROTATE_SPEED;
+        scene.backgroundRotation.y = hdriYaw;
+        scene.environmentRotation.y = hdriYaw;
+    }
 
     const loader = new GLTFLoader();
     let currentRoot = null;
@@ -128,6 +182,14 @@ export function createViewer() {
         scene.add(gltf.scene);
         currentRoot = gltf.scene;
         frameObject(gltf.scene);
+
+        modelYaw = 0;
+        modelTilt = 0;
+        tiltAxis.setFromMatrixColumn(camera.matrixWorld, 0);
+        tiltAxis.y = 0;
+        if (tiltAxis.lengthSq() < 1e-6) tiltAxis.set(1, 0, 0);
+        tiltAxis.normalize();
+        applyModelOrientation();
         return gltf;
     }
 
@@ -141,6 +203,7 @@ export function createViewer() {
 
     return {
         loadModel,
+        rotateCameraBy,
         backend: forceWebGL ? 'WebGL2' : 'WebGPU',
         setHdriEnabled(v) { hdriEnabled = !!v; applyHdri(); },
         setHdriBackground(v) { hdriBackground = !!v; applyHdri(); },
