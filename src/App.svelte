@@ -83,7 +83,7 @@
     <header>
         <div class="title">
             <span class="dot" data-status={status}></span>
-            <h1>Scene</h1>
+            <h1>Demo</h1>
         </div>
         <button class="ghost" onclick={() => (collapsed = !collapsed)} aria-label="Toggle panel">
             {collapsed ? '+' : '–'}
@@ -163,7 +163,7 @@
         position: fixed;
         top: 20px;
         right: 20px;
-        width: 280px;
+        width: 224px;
         max-height: calc(100vh - 40px);
         overflow: hidden;
         display: flex;
