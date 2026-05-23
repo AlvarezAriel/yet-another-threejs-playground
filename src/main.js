@@ -1,9 +1,9 @@
 import { mount } from 'svelte';
-import { createViewer } from './viewer.js';
+import { createGallery } from './viewer.js';
 import App from './App.svelte';
 
-const viewer = createViewer();
-console.info(`Renderer backend: ${viewer.backend}`);
+const gallery = createGallery();
+console.info(`Renderer backend: ${gallery.backend}`);
 
 const target = document.getElementById('ui') ?? document.body;
-mount(App, { target, props: { viewer } });
+mount(App, { target, props: { gallery } });

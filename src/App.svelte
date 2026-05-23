@@ -1,8 +1,10 @@
 <script>
-    let { viewer } = $props();
+    import { onMount } from 'svelte';
+
+    let { gallery } = $props();
 
     const base = import.meta.env.BASE_URL;
-    const builtIn = [
+    const models = [
         { id: 'gateau-praline',      name: 'Gateau Praline',      url: base + '01_Gateau_praline.glb' },
         { id: 'cheesecake-maracuya', name: 'Cheesecake Maracuya', url: base + '02_Cheesecakemaracuya.glb' },
         { id: 'financier-pistache',  name: 'Financier Pistache',  url: base + '03_Financier_pistache.glb' },
@@ -10,7 +12,6 @@
         { id: 'gastro-salmon',       name: 'Gastro Salmon',       url: base + '05_Gastro_salmon.glb' },
         { id: 'gastro-vegetable',    name: 'Gastro Vegetable',    url: base + '06_Gastro%20vegetable.glb' },
         { id: 'croissant',           name: 'Croissant',           url: base + '07_Croissant.glb' },
-        { id: 'croissant-cycles',    name: 'Croissant (Cycles)',  url: base + '07_Croissant_Cycles.glb' },
         { id: 'pizza',               name: 'Pizza',               url: base + '08_Pizza.glb' },
         { id: 'bobun',               name: 'Bobun',               url: base + '09_Bobun.glb' },
         { id: 'cesar',               name: 'Cesar',               url: base + '10_cesar.glb' },
@@ -21,37 +22,21 @@
     const isMobile = typeof window !== 'undefined'
         && window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
 
-    let custom = $state([]);
-    let models = $derived([...builtIn, ...custom]);
-    let activeId = $state(null);
-    let status = $state('idle');
-    let error = $state(null);
-    let collapsed = $state(isMobile);
+    let elements = $state({});
+    let statuses = $state({});
+    let errors = $state({});
 
+    let collapsed = $state(isMobile);
     let hdriEnabled = $state(true);
     let hdriBackground = $state(false);
-    let hdriAffectsAll = $state(false);
+    let hdriAffectsAll = $state(true);
 
-    function toggleHdri(e) {
-        hdriEnabled = e.target.checked;
-        viewer.setHdriEnabled(hdriEnabled);
-    }
-
-    function toggleHdriBackground(e) {
-        hdriBackground = e.target.checked;
-        viewer.setHdriBackground(hdriBackground);
-    }
-
-    function toggleHdriAffectsAll(e) {
-        hdriAffectsAll = e.target.checked;
-        viewer.setHdriAffectsAll(hdriAffectsAll);
-    }
-
-    let fileInput = $state();
+    function toggleHdri(e)            { hdriEnabled    = e.target.checked; gallery.setHdriEnabled(hdriEnabled); }
+    function toggleHdriBackground(e)  { hdriBackground = e.target.checked; gallery.setHdriBackground(hdriBackground); }
+    function toggleHdriAffectsAll(e)  { hdriAffectsAll = e.target.checked; gallery.setHdriAffectsAll(hdriAffectsAll); }
 
     let camPadPointer = null;
     let camPadLast = { x: 0, y: 0 };
-
     function onCamPadDown(e) {
         if (camPadPointer !== null) return;
         camPadPointer = e.pointerId;
@@ -59,64 +44,46 @@
         camPadLast.y = e.clientY;
         e.currentTarget.setPointerCapture(e.pointerId);
     }
-
     function onCamPadMove(e) {
         if (e.pointerId !== camPadPointer) return;
         const dx = e.clientX - camPadLast.x;
-        const dy = e.clientY - camPadLast.y;
         camPadLast.x = e.clientX;
         camPadLast.y = e.clientY;
-        viewer.rotateCameraBy(dx, dy);
+        gallery.rotateEnvBy(dx);
     }
-
     function onCamPadUp(e) {
         if (e.pointerId !== camPadPointer) return;
         camPadPointer = null;
         e.currentTarget.releasePointerCapture?.(e.pointerId);
     }
 
-    async function select(model) {
-        if (model.id === activeId && status !== 'error') return;
-        activeId = model.id;
-        status = 'loading';
-        error = null;
-        try {
-            await viewer.loadModel(model.url);
-            status = 'ready';
-        } catch (e) {
-            console.error(e);
-            error = e?.message ?? String(e);
-            status = 'error';
+    onMount(() => {
+        const handles = [];
+        for (const m of models) {
+            const el = elements[m.id];
+            if (!el) continue;
+            const handle = gallery.addView({
+                element: el,
+                url: m.url,
+                name: m.name,
+                onStatus: (status, error) => {
+                    statuses[m.id] = status;
+                    if (error) errors[m.id] = error;
+                },
+            });
+            handles.push(handle);
+            statuses[m.id] = 'pending';
         }
-    }
-
-    function onFiles(event) {
-        const files = Array.from(event.target.files ?? []);
-        for (const file of files) {
-            const id = `custom-${crypto.randomUUID()}`;
-            const url = URL.createObjectURL(file);
-            custom = [...custom, { id, name: file.name.replace(/\.glb$/i, ''), url, owned: true }];
-        }
-        event.target.value = '';
-        const last = custom.at(-1);
-        if (last) select(last);
-    }
-
-    function removeCustom(model, e) {
-        e.stopPropagation();
-        if (model.owned) URL.revokeObjectURL(model.url);
-        custom = custom.filter((m) => m.id !== model.id);
-        if (activeId === model.id) select(builtIn[0]);
-    }
-
-    select(builtIn[0]);
+        return () => {
+            for (const h of handles) gallery.removeView(h);
+        };
+    });
 </script>
 
 <aside class="panel" class:collapsed>
     <header>
         <div class="title">
-            <span class="dot" data-status={status}></span>
-            <h1>Demo</h1>
+            <h1>Gallery</h1>
         </div>
         <button class="ghost" onclick={() => (collapsed = !collapsed)} aria-label="Toggle panel">
             {collapsed ? '+' : '–'}
@@ -126,32 +93,7 @@
     {#if !collapsed}
         <section class="body">
             <div class="meta">
-                <span class="badge">{viewer.backend}</span>
-                {#if status === 'loading'}<span class="meta-text">loading…</span>{/if}
-                {#if status === 'error'}<span class="meta-text err">{error}</span>{/if}
-            </div>
-
-            <div class="group">
-                <div class="group-label">Model</div>
-                <ul class="list">
-                    {#each models as model (model.id)}
-                        <li class="row" class:active={activeId === model.id}>
-                            <button
-                                class="item"
-                                onclick={() => select(model)}
-                            >
-                                <span class="item-name">{model.name}</span>
-                            </button>
-                            {#if model.owned}
-                                <button
-                                    class="x"
-                                    aria-label="Remove {model.name}"
-                                    onclick={(e) => removeCustom(model, e)}
-                                >×</button>
-                            {/if}
-                        </li>
-                    {/each}
-                </ul>
+                <span class="badge">{gallery.backend}</span>
             </div>
 
             <div class="group">
@@ -161,27 +103,17 @@
                     <span>Enable HDRI</span>
                 </label>
                 <label class="toggle" class:disabled={!hdriEnabled}>
-                    <input
-                        type="checkbox"
-                        checked={hdriBackground}
-                        disabled={!hdriEnabled}
-                        onchange={toggleHdriBackground}
-                    />
+                    <input type="checkbox" checked={hdriBackground} disabled={!hdriEnabled} onchange={toggleHdriBackground} />
                     <span>Show as background</span>
                 </label>
                 <label class="toggle" class:disabled={!hdriEnabled}>
-                    <input
-                        type="checkbox"
-                        checked={hdriAffectsAll}
-                        disabled={!hdriEnabled}
-                        onchange={toggleHdriAffectsAll}
-                    />
+                    <input type="checkbox" checked={hdriAffectsAll} disabled={!hdriEnabled} onchange={toggleHdriAffectsAll} />
                     <span>Apply to all meshes</span>
                 </label>
 
                 <div
                     class="cam-pad"
-                    role="slider"
+                    role="button"
                     aria-label="Drag to rotate environment"
                     tabindex="0"
                     onpointerdown={onCamPadDown}
@@ -193,27 +125,115 @@
                     <span class="cam-pad-hint">drag</span>
                 </div>
             </div>
-
-            <button class="cta" onclick={() => fileInput.click()}>
-                <span class="plus">+</span> Add GLB
-            </button>
-            <input
-                bind:this={fileInput}
-                type="file"
-                accept=".glb,model/gltf-binary"
-                multiple
-                hidden
-                onchange={onFiles}
-            />
         </section>
     {/if}
 </aside>
 
+<main class="gallery">
+    {#each models as model (model.id)}
+        <article class="card">
+            <header class="card-header">
+                <h2 class="card-title">{model.name}</h2>
+            </header>
+            <div class="card-viewport" bind:this={elements[model.id]}>
+                {#if statuses[model.id] === 'pending' || statuses[model.id] === 'queued'}
+                    <span class="card-overlay">…</span>
+                {:else if statuses[model.id] === 'loading'}
+                    <span class="card-overlay">Loading…</span>
+                {:else if statuses[model.id] === 'error'}
+                    <span class="card-overlay err">{errors[model.id] ?? 'Error'}</span>
+                {/if}
+            </div>
+        </article>
+    {/each}
+</main>
+
 <style>
     :global(body) {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-        color: #e8eaee;
+        color: #3a2e23;
+        background: #fdf8f1;
+        min-height: 100vh;
     }
+
+    .gallery {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 24px;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 40px 32px 80px;
+    }
+    @media (min-width: 640px) {
+        .gallery { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (min-width: 960px) {
+        .gallery { grid-template-columns: repeat(3, 1fr); padding: 56px 48px 120px; }
+    }
+
+    .card {
+        display: flex;
+        flex-direction: column;
+        border-radius: 14px;
+        background: transparent;
+        border: 1px solid rgba(58, 46, 35, 0.08);
+        box-shadow:
+            0 14px 30px rgba(120, 80, 40, 0.10),
+            0 2px 0 rgba(255, 255, 255, 0.5) inset;
+        overflow: hidden;
+        transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 220ms ease;
+    }
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow:
+            0 20px 40px rgba(120, 80, 40, 0.16),
+            0 2px 0 rgba(255, 255, 255, 0.6) inset;
+    }
+
+    .card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 18px;
+        border-bottom: 1px solid rgba(58, 46, 35, 0.08);
+        background: #ffffff;
+    }
+
+    .card-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: #3a2e23;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .card-viewport {
+        position: relative;
+        aspect-ratio: 1 / 1;
+        cursor: grab;
+        background: transparent;
+    }
+    .card-viewport:active { cursor: grabbing; }
+
+    .card-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: rgba(58, 46, 35, 0.45);
+        pointer-events: none;
+    }
+    .card-overlay.err { color: #b91c1c; text-transform: none; padding: 8px; text-align: center; }
 
     .panel {
         position: fixed;
@@ -224,14 +244,12 @@
         overflow: hidden;
         display: flex;
         flex-direction: column;
-        background: rgba(18, 20, 26, 0.55);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 16px;
-        backdrop-filter: blur(24px) saturate(180%);
-        -webkit-backdrop-filter: blur(24px) saturate(180%);
+        background: #ffffff;
+        border: 1px solid rgba(58, 46, 35, 0.08);
+        border-radius: 14px;
         box-shadow:
-            0 20px 60px rgba(0, 0, 0, 0.45),
-            0 1px 0 rgba(255, 255, 255, 0.04) inset;
+            0 18px 40px rgba(120, 80, 40, 0.14),
+            0 1px 0 rgba(255, 255, 255, 0.6) inset;
         z-index: 10;
         animation: rise 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
     }
@@ -246,50 +264,34 @@
         align-items: center;
         justify-content: space-between;
         padding: 14px 16px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        border-bottom: 1px solid rgba(58, 46, 35, 0.08);
     }
+    .panel header { padding: 14px 16px; }
 
     .title { display: flex; align-items: center; gap: 10px; }
 
     h1 {
-        font-size: 13px;
-        font-weight: 600;
-        letter-spacing: 0.04em;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
         margin: 0;
-        color: rgba(232, 234, 238, 0.92);
-    }
-
-    .dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #6b7280;
-        box-shadow: 0 0 10px currentColor;
-        transition: background 200ms ease;
-    }
-    .dot[data-status="ready"]   { background: #34d399; color: #34d399; }
-    .dot[data-status="loading"] { background: #fbbf24; color: #fbbf24; animation: pulse 1.1s ease-in-out infinite; }
-    .dot[data-status="error"]   { background: #f87171; color: #f87171; }
-
-    @keyframes pulse {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50%      { opacity: 0.5; transform: scale(0.85); }
+        color: #c2410c;
     }
 
     .ghost {
-        width: 24px;
-        height: 24px;
+        width: 26px;
+        height: 26px;
         border-radius: 8px;
-        background: rgba(255, 255, 255, 0.04);
-        border: 1px solid rgba(255, 255, 255, 0.06);
-        color: rgba(232, 234, 238, 0.7);
+        background: rgba(194, 65, 12, 0.06);
+        border: 1px solid rgba(194, 65, 12, 0.18);
+        color: #c2410c;
         font-size: 16px;
         line-height: 1;
         cursor: pointer;
-        transition: background 160ms ease, color 160ms ease;
+        transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
     }
-    .ghost:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+    .ghost:hover { background: rgba(194, 65, 12, 0.12); border-color: rgba(194, 65, 12, 0.35); }
 
     .body {
         padding: 14px 16px 16px;
@@ -299,121 +301,25 @@
         overflow-y: auto;
     }
 
-    .meta {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 11px;
-    }
+    .meta { display: flex; align-items: center; gap: 8px; font-size: 11px; }
 
     .badge {
         padding: 3px 8px;
         border-radius: 999px;
-        background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(168, 85, 247, 0.25));
-        border: 1px solid rgba(168, 85, 247, 0.35);
-        color: #d8b4fe;
+        background: linear-gradient(135deg, rgba(194, 65, 12, 0.12), rgba(154, 64, 36, 0.12));
+        border: 1px solid rgba(194, 65, 12, 0.28);
+        color: #9a3412;
         font-weight: 600;
         letter-spacing: 0.05em;
     }
 
-    .meta-text { color: rgba(232, 234, 238, 0.55); }
-    .meta-text.err { color: #fca5a5; }
-
     .group-label {
         font-size: 10px;
-        font-weight: 600;
-        letter-spacing: 0.12em;
+        font-weight: 700;
+        letter-spacing: 0.14em;
         text-transform: uppercase;
-        color: rgba(232, 234, 238, 0.45);
+        color: rgba(58, 46, 35, 0.55);
         margin-bottom: 8px;
-    }
-
-    .list {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
-
-    .row {
-        display: flex;
-        align-items: stretch;
-        gap: 4px;
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        border-radius: 10px;
-        overflow: hidden;
-        transition: background 140ms ease, border-color 140ms ease;
-    }
-    .row:hover { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.1); }
-    .row.active {
-        background: linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(168, 85, 247, 0.14));
-        border-color: rgba(168, 85, 247, 0.45);
-        box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.25) inset;
-    }
-
-    .item {
-        flex: 1;
-        padding: 9px 12px;
-        background: transparent;
-        border: 0;
-        color: rgba(232, 234, 238, 0.85);
-        font-size: 13px;
-        text-align: left;
-        cursor: pointer;
-        transition: transform 140ms ease, color 140ms ease;
-    }
-    .item:active { transform: scale(0.99); }
-    .row.active .item { color: #fff; }
-
-    .item-name {
-        display: block;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .x {
-        width: 26px;
-        margin: 4px;
-        border: 0;
-        border-radius: 6px;
-        font-size: 14px;
-        color: rgba(232, 234, 238, 0.55);
-        background: rgba(255, 255, 255, 0.04);
-        cursor: pointer;
-        transition: background 140ms ease, color 140ms ease;
-    }
-    .x:hover { background: rgba(248, 113, 113, 0.18); color: #fca5a5; }
-
-    .cta {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px dashed rgba(255, 255, 255, 0.12);
-        background: rgba(255, 255, 255, 0.02);
-        color: rgba(232, 234, 238, 0.85);
-        font-size: 13px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
-    }
-    .cta:hover {
-        background: rgba(168, 85, 247, 0.08);
-        border-color: rgba(168, 85, 247, 0.45);
-        color: #fff;
-    }
-
-    .plus {
-        font-size: 16px;
-        line-height: 1;
-        color: rgba(168, 85, 247, 0.9);
-        font-weight: 600;
     }
 
     .toggle {
@@ -422,16 +328,16 @@
         gap: 8px;
         padding: 8px 10px;
         border-radius: 10px;
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        color: rgba(232, 234, 238, 0.85);
+        background: #fbf6ec;
+        border: 1px solid rgba(58, 46, 35, 0.08);
+        color: #3a2e23;
         font-size: 12px;
         cursor: pointer;
         margin-bottom: 4px;
         transition: background 140ms ease, border-color 140ms ease;
     }
-    .toggle:hover { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.1); }
-    .toggle input { accent-color: #a855f7; cursor: pointer; }
+    .toggle:hover { background: #f5ecdb; border-color: rgba(194, 65, 12, 0.25); }
+    .toggle input { accent-color: #c2410c; cursor: pointer; }
     .toggle.disabled { opacity: 0.5; cursor: not-allowed; }
     .toggle.disabled input { cursor: not-allowed; }
 
@@ -439,10 +345,10 @@
         margin-top: 6px;
         height: 70px;
         border-radius: 10px;
-        border: 1px dashed rgba(168, 85, 247, 0.35);
+        border: 1px dashed rgba(194, 65, 12, 0.4);
         background:
-            radial-gradient(circle at 50% 50%, rgba(168, 85, 247, 0.12), transparent 70%),
-            rgba(255, 255, 255, 0.02);
+            radial-gradient(circle at 50% 50%, rgba(194, 65, 12, 0.10), transparent 70%),
+            #fbf6ec;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -451,17 +357,17 @@
         cursor: grab;
         touch-action: none;
         user-select: none;
-        color: rgba(232, 234, 238, 0.85);
+        color: #3a2e23;
         transition: background 140ms ease, border-color 140ms ease;
     }
-    .cam-pad:hover { border-color: rgba(168, 85, 247, 0.55); }
-    .cam-pad:active { cursor: grabbing; background: rgba(168, 85, 247, 0.12); }
-    .cam-pad-label { font-size: 12px; font-weight: 500; }
+    .cam-pad:hover { border-color: rgba(194, 65, 12, 0.6); }
+    .cam-pad:active { cursor: grabbing; background: rgba(194, 65, 12, 0.12); }
+    .cam-pad-label { font-size: 12px; font-weight: 600; color: #9a3412; }
     .cam-pad-hint {
         font-size: 10px;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
-        color: rgba(232, 234, 238, 0.45);
+        color: rgba(58, 46, 35, 0.5);
     }
 
     @media (max-width: 768px), (pointer: coarse) {
