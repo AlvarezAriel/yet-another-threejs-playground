@@ -1,17 +1,11 @@
 import * as THREE from 'three/webgpu';
 import WebGPU from 'three/addons/capabilities/WebGPU.js';
-import { Inspector } from 'three/addons/inspector/Inspector.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
 
 const HDRI_NAME_PREFIXES = ['Plate', 'Cylinder'];
 function usesHdri(obj) {
     return HDRI_NAME_PREFIXES.some((p) => obj.name?.startsWith(p));
-}
-
-function isMobile() {
-    return typeof window !== 'undefined'
-        && window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
 }
 
 const ROTATE_SPEED = 0.006;
@@ -60,8 +54,7 @@ export function createGallery() {
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.toneMapping = THREE.LinearToneMapping;
-    renderer.setClearColor(new THREE.Color(0xfdf8f1), 0);
-    if (!isMobile()) renderer.inspector = new Inspector();
+    renderer.setClearColor(new THREE.Color(0xfefcf7), 0);
 
     const canvas = renderer.domElement;
     canvas.style.position = 'fixed';
@@ -230,13 +223,59 @@ export function createGallery() {
         applyOrientation(view);
     }
 
-    function addView({ element, url, name, onStatus }) {
+    const CLICK_THRESHOLD_PX = 6;
+
+    function attachPointers(view, element) {
+        element.style.touchAction = 'none';
+        const onDown = (e) => {
+            if (!view.modelRoot || view.pointerId !== null) return;
+            if (e.target instanceof Element && e.target.closest('button')) return;
+            view.pointerId = e.pointerId;
+            view.pointerX = e.clientX;
+            view.pointerY = e.clientY;
+            view.pointerStartX = e.clientX;
+            view.pointerStartY = e.clientY;
+            element.setPointerCapture(e.pointerId);
+        };
+        const onMove = (e) => {
+            if (e.pointerId !== view.pointerId || !view.modelRoot) return;
+            const dx = e.clientX - view.pointerX;
+            const dy = e.clientY - view.pointerY;
+            view.pointerX = e.clientX;
+            view.pointerY = e.clientY;
+            view.modelYaw += dx * ROTATE_SPEED;
+            view.modelTilt = Math.max(MIN_TILT, Math.min(MAX_TILT, view.modelTilt + dy * ROTATE_SPEED));
+            applyOrientation(view);
+        };
+        const onUp = (e) => {
+            if (e.pointerId !== view.pointerId) return;
+            const ddx = e.clientX - view.pointerStartX;
+            const ddy = e.clientY - view.pointerStartY;
+            view.pointerId = null;
+            element.releasePointerCapture?.(e.pointerId);
+            if (Math.hypot(ddx, ddy) < CLICK_THRESHOLD_PX) view.onClick?.();
+        };
+        element.addEventListener('pointerdown', onDown);
+        element.addEventListener('pointermove', onMove);
+        element.addEventListener('pointerup', onUp);
+        element.addEventListener('pointercancel', onUp);
+        return () => {
+            element.removeEventListener('pointerdown', onDown);
+            element.removeEventListener('pointermove', onMove);
+            element.removeEventListener('pointerup', onUp);
+            element.removeEventListener('pointercancel', onUp);
+        };
+    }
+
+    let focusedView = null;
+
+    function addView({ element, url, name, onStatus, onClick }) {
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 1000);
         camera.position.set(-8, 10, 11);
 
         const view = {
-            element, url, name, onStatus,
+            element, cardElement: element, url, name, onStatus, onClick,
             scene, camera,
             modelRoot: null,
             status: 'pending',
@@ -254,49 +293,70 @@ export function createGallery() {
             pointerId: null,
             pointerX: 0,
             pointerY: 0,
+            pointerStartX: 0,
+            pointerStartY: 0,
+            detachPointers: null,
         };
         element._galleryView = view;
         views.push(view);
         applyHdriToView(view);
 
-        element.style.touchAction = 'none';
-        element.addEventListener('pointerdown', (e) => {
-            if (!view.modelRoot || view.pointerId !== null) return;
-            view.pointerId = e.pointerId;
-            view.pointerX = e.clientX;
-            view.pointerY = e.clientY;
-            element.setPointerCapture(e.pointerId);
-        });
-        element.addEventListener('pointermove', (e) => {
-            if (e.pointerId !== view.pointerId || !view.modelRoot) return;
-            const dx = e.clientX - view.pointerX;
-            const dy = e.clientY - view.pointerY;
-            view.pointerX = e.clientX;
-            view.pointerY = e.clientY;
-            view.modelYaw += dx * ROTATE_SPEED;
-            view.modelTilt = Math.max(MIN_TILT, Math.min(MAX_TILT, view.modelTilt + dy * ROTATE_SPEED));
-            applyOrientation(view);
-        });
-        const endDrag = (e) => {
-            if (e.pointerId !== view.pointerId) return;
-            view.pointerId = null;
-            element.releasePointerCapture?.(e.pointerId);
-        };
-        element.addEventListener('pointerup', endDrag);
-        element.addEventListener('pointercancel', endDrag);
-
+        view.detachPointers = attachPointers(view, element);
         io.observe(element);
         return view;
     }
 
     function removeView(view) {
-        io.unobserve(view.element);
+        if (focusedView === view) focusedView = null;
+        view.detachPointers?.();
+        io.unobserve(view.cardElement);
         const idx = views.indexOf(view);
         if (idx >= 0) views.splice(idx, 1);
         if (view.modelRoot) {
             view.scene.remove(view.modelRoot);
             disposeRoot(view.modelRoot);
         }
+    }
+
+    function focusView(view, detailElement) {
+        if (focusedView && focusedView !== view) unfocusView(focusedView);
+        view.detachPointers?.();
+        view.element = detailElement;
+        view.detachPointers = attachPointers(view, detailElement);
+        focusedView = view;
+    }
+
+    function unfocusView(view) {
+        view.detachPointers?.();
+        view.element = view.cardElement;
+        view.detachPointers = attachPointers(view, view.cardElement);
+        if (focusedView === view) focusedView = null;
+    }
+
+    function renderView(view, winW, winH) {
+        const rect = view.element.getBoundingClientRect();
+        if (rect.bottom <= 0 || rect.top >= winH) return;
+        if (rect.right <= 0 || rect.left >= winW) return;
+        if (rect.width <= 0 || rect.height <= 0) return;
+        if (!view.modelRoot) return;
+
+        updateInertia(view);
+
+        const x = Math.round(rect.left);
+        const y = Math.round(rect.top);
+        const w = Math.round(rect.width);
+        const h = Math.round(rect.height);
+
+        renderer.setScissor(x, y, w, h);
+        renderer.setViewport(x, y, w, h);
+
+        const aspect = w / h;
+        if (Math.abs(view.camera.aspect - aspect) > 0.001) {
+            view.camera.aspect = aspect;
+            view.camera.updateProjectionMatrix();
+        }
+
+        renderer.render(view.scene, view.camera);
     }
 
     function render() {
@@ -308,32 +368,12 @@ export function createGallery() {
         renderer.clear();
 
         renderer.setScissorTest(true);
-        renderer.setClearColor(0xfdf8f1, 1);
+        renderer.setClearColor(0xfefcf7, 1);
 
-        for (const view of views) {
-            const rect = view.element.getBoundingClientRect();
-            if (rect.bottom <= 0 || rect.top >= winH) continue;
-            if (rect.right <= 0 || rect.left >= winW) continue;
-            if (rect.width <= 0 || rect.height <= 0) continue;
-            if (!view.modelRoot) continue;
-
-            updateInertia(view);
-
-            const x = Math.round(rect.left);
-            const y = Math.round(rect.top);
-            const w = Math.round(rect.width);
-            const h = Math.round(rect.height);
-
-            renderer.setScissor(x, y, w, h);
-            renderer.setViewport(x, y, w, h);
-
-            const aspect = w / h;
-            if (Math.abs(view.camera.aspect - aspect) > 0.001) {
-                view.camera.aspect = aspect;
-                view.camera.updateProjectionMatrix();
-            }
-
-            renderer.render(view.scene, view.camera);
+        if (focusedView) {
+            renderView(focusedView, winW, winH);
+        } else {
+            for (const view of views) renderView(view, winW, winH);
         }
     }
     renderer.setAnimationLoop(render);
@@ -345,6 +385,8 @@ export function createGallery() {
     return {
         addView,
         removeView,
+        focusView,
+        unfocusView,
         backend: forceWebGL ? 'WebGL2' : 'WebGPU',
         setHdriEnabled(v) { hdriEnabled = !!v; applyHdriToAll(); },
         setHdriBackground(v) { hdriBackground = !!v; applyHdriToAll(); },
