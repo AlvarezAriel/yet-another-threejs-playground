@@ -58,6 +58,10 @@
     let gtaoResolution = $state(g.resolutionScale);
 
     function toggleGtao(e)   { gtaoEnabled = e.target.checked; gallery.setGtaoEnabled(gtaoEnabled); }
+
+    // --- Debug ---
+    let debugRoughness = $state(false);
+    function toggleDebugRoughness(e) { debugRoughness = e.target.checked; gallery.setDebugRoughness(debugRoughness); }
     function onGtaoSamples(e)    { gtaoSamples = +e.target.value;    gallery.setGtaoParam('samples', gtaoSamples); }
     function onGtaoRadius(e)     { gtaoRadius = +e.target.value;     gallery.setGtaoParam('radius', gtaoRadius); }
     function onGtaoThickness(e)  { gtaoThickness = +e.target.value;  gallery.setGtaoParam('thickness', gtaoThickness); }
@@ -246,6 +250,15 @@
                     <span class="field-label">Resolution <em>{gtaoResolution.toFixed(2)}×</em></span>
                     <input class="range" type="range" min="0.25" max="1" step="0.05" value={gtaoResolution} disabled={!gtaoEnabled} oninput={onGtaoResolution} />
                 </label>
+            </div>
+
+            <div class="group">
+                <div class="group-label">Debug</div>
+                <label class="toggle">
+                    <input type="checkbox" checked={debugRoughness} onchange={toggleDebugRoughness} />
+                    <span>Show roughness map</span>
+                </label>
+                <p class="hint-note">Grayscale = effective roughness (black = glossy, white = matte). Bypasses tone mapping &amp; GTAO.</p>
             </div>
         </section>
     {/if}

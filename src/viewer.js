@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { pass, mrt, output, normalView } from 'three/tsl';
+import { pass, mrt, output, normalView, texture, vec3 } from 'three/tsl';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js';
 import WebGPU from 'three/addons/capabilities/WebGPU.js';
@@ -40,22 +40,6 @@ const MIN_TILT = -0.5;
 const INERTIA_DECAY = 0.88;
 const INERTIA_EPSILON = 0.00005;
 
-// Mirror-glossy plates throw a sharp specular reflection of the bright HDRI right
-// where a model meets them — a "contact glow" that screen-space AO can't darken
-// (it sits on a depth edge with ~no occlusion). Enforcing a roughness floor turns
-// that hotspot into a soft satin sheen, killing the glow. Already-matte materials
-// are above the floor and untouched.
-const MIN_ROUGHNESS = 0.55;
-function tameSpecular(material) {
-    const apply = (m) => {
-        if (!m) return;
-        if ((m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) && typeof m.roughness === 'number') {
-            m.roughness = Math.max(m.roughness, MIN_ROUGHNESS);
-        }
-    };
-    if (Array.isArray(material)) material.forEach(apply); else apply(material);
-}
-
 function toAlbedo(material) {
     return new THREE.MeshBasicMaterial({
         map: material.map ?? null,
@@ -69,6 +53,20 @@ function toAlbedo(material) {
     });
 }
 
+// Debug visualization: render the effective roughness (glTF metallic-roughness
+// texture G channel * roughness scalar) as flat grayscale. toneMapped=false so the
+// gray reads as the literal roughness value (0 = black/glossy, 1 = white/matte).
+function toRoughnessDebug(material) {
+    const m = new THREE.MeshBasicNodeMaterial();
+    const r = typeof material.roughness === 'number' ? material.roughness : 1;
+    m.colorNode = material.roughnessMap
+        ? vec3(texture(material.roughnessMap).g.mul(r))
+        : vec3(r);
+    m.toneMapped = false;
+    m.side = material.side ?? THREE.FrontSide;
+    return m;
+}
+
 function disposeRoot(root) {
     const textures = new Set();
     const materials = new Set();
@@ -78,6 +76,7 @@ function disposeRoot(root) {
         if (Array.isArray(obj.material)) obj.material.forEach(collect); else collect(obj.material);
         if (obj.userData.pbrMaterial) (Array.isArray(obj.userData.pbrMaterial) ? obj.userData.pbrMaterial : [obj.userData.pbrMaterial]).forEach(collect);
         if (obj.userData.basicMaterial) (Array.isArray(obj.userData.basicMaterial) ? obj.userData.basicMaterial : [obj.userData.basicMaterial]).forEach(collect);
+        if (obj.userData.roughnessMaterial) (Array.isArray(obj.userData.roughnessMaterial) ? obj.userData.roughnessMaterial : [obj.userData.roughnessMaterial]).forEach(collect);
     });
     for (const m of materials) {
         for (const k of Object.keys(m)) {
@@ -111,6 +110,7 @@ export function createGallery() {
     const loader = new GLTFLoader();
 
     let envMap = null;
+    let debugRoughness = false;
     let hdriEnabled = true;
     let hdriBackground = false;
     let hdriAffectsAll = true;
@@ -141,6 +141,10 @@ export function createGallery() {
             const pbr = obj.userData.pbrMaterial;
             const basic = obj.userData.basicMaterial;
             if (!pbr || !basic) return;
+            if (debugRoughness && obj.userData.roughnessMaterial) {
+                obj.material = obj.userData.roughnessMaterial;
+                return;
+            }
             const useHdri = hdriAffectsAll || usesHdri(obj);
             obj.material = useHdri ? pbr : basic;
         });
@@ -181,11 +185,13 @@ export function createGallery() {
             const gltf = await loader.loadAsync(view.url);
             gltf.scene.traverse((obj) => {
                 if (!obj.isMesh) return;
-                tameSpecular(obj.material);
                 obj.userData.pbrMaterial = obj.material;
                 obj.userData.basicMaterial = Array.isArray(obj.material)
                     ? obj.material.map(toAlbedo)
                     : toAlbedo(obj.material);
+                obj.userData.roughnessMaterial = Array.isArray(obj.material)
+                    ? obj.material.map(toRoughnessDebug)
+                    : toRoughnessDebug(obj.material);
             });
             applyHdriMaterials(gltf.scene);
             gltf.scene.scale.set(5, 5, 5);
@@ -480,7 +486,7 @@ export function createGallery() {
         renderer.setClearColor(0xfefcf7, 1);
 
         if (focusedView) {
-            if (gtaoEnabled) renderFocusedWithGtao(focusedView, winW, winH);
+            if (gtaoEnabled && !debugRoughness) renderFocusedWithGtao(focusedView, winW, winH);
             else renderView(focusedView, winW, winH);
         } else {
             for (const view of views) renderView(view, winW, winH);
@@ -543,5 +549,14 @@ export function createGallery() {
             applyGtaoParams();
         },
         get gtaoEnabled() { return gtaoEnabled; },
+
+        // --- Debug ---
+        setDebugRoughness(v) {
+            debugRoughness = !!v;
+            for (const view of views) {
+                if (view.modelRoot) applyHdriMaterials(view.modelRoot);
+            }
+        },
+        get debugRoughness() { return debugRoughness; },
     };
 }
