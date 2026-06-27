@@ -40,6 +40,31 @@
     function toggleHdriBackground(e)  { hdriBackground = e.target.checked; gallery.setHdriBackground(hdriBackground); }
     function toggleHdriAffectsAll(e)  { hdriAffectsAll = e.target.checked; gallery.setHdriAffectsAll(hdriAffectsAll); }
 
+    // --- Rendering / tone mapping ---
+    const toneMappings = gallery.toneMappings;
+    let toneMapping = $state('ACESFilmic');
+    let exposure = $state(1);
+    function onToneMapping(e) { toneMapping = e.target.value; gallery.setToneMapping(toneMapping); }
+    function onExposure(e)    { exposure = +e.target.value; gallery.setExposure(exposure); }
+
+    // --- GTAO (ground-truth ambient occlusion, applied in the detail view) ---
+    const g = gallery.gtaoDefaults;
+    let gtaoEnabled = $state(true);
+    let gtaoSamples = $state(g.samples);
+    let gtaoRadius = $state(g.radius);
+    let gtaoThickness = $state(g.thickness);
+    let gtaoDistanceExponent = $state(g.distanceExponent);
+    let gtaoScale = $state(g.scale);
+    let gtaoResolution = $state(g.resolutionScale);
+
+    function toggleGtao(e)   { gtaoEnabled = e.target.checked; gallery.setGtaoEnabled(gtaoEnabled); }
+    function onGtaoSamples(e)    { gtaoSamples = +e.target.value;    gallery.setGtaoParam('samples', gtaoSamples); }
+    function onGtaoRadius(e)     { gtaoRadius = +e.target.value;     gallery.setGtaoParam('radius', gtaoRadius); }
+    function onGtaoThickness(e)  { gtaoThickness = +e.target.value;  gallery.setGtaoParam('thickness', gtaoThickness); }
+    function onGtaoDistExp(e)    { gtaoDistanceExponent = +e.target.value; gallery.setGtaoParam('distanceExponent', gtaoDistanceExponent); }
+    function onGtaoScale(e)      { gtaoScale = +e.target.value;      gallery.setGtaoParam('scale', gtaoScale); }
+    function onGtaoResolution(e) { gtaoResolution = +e.target.value; gallery.setGtaoParam('resolutionScale', gtaoResolution); }
+
     let camPadPointer = null;
     let camPadLast = { x: 0, y: 0 };
     function onCamPadDown(e) {
@@ -171,6 +196,56 @@
                     <span class="cam-pad-label">Rotate environment</span>
                     <span class="cam-pad-hint">drag</span>
                 </div>
+            </div>
+
+            <div class="group">
+                <div class="group-label">Tone mapping</div>
+                <label class="field">
+                    <span class="field-label">Operator</span>
+                    <select class="select" value={toneMapping} onchange={onToneMapping}>
+                        {#each toneMappings as tm}
+                            <option value={tm}>{tm}</option>
+                        {/each}
+                    </select>
+                </label>
+                <label class="field">
+                    <span class="field-label">Exposure <em>{exposure.toFixed(2)}</em></span>
+                    <input class="range" type="range" min="0" max="3" step="0.01" value={exposure} oninput={onExposure} />
+                </label>
+            </div>
+
+            <div class="group">
+                <div class="group-label">GTAO</div>
+                <label class="toggle">
+                    <input type="checkbox" checked={gtaoEnabled} onchange={toggleGtao} />
+                    <span>Enable GTAO</span>
+                </label>
+                <p class="hint-note">Applies in the detail view (open an item).</p>
+
+                <label class="field" class:disabled={!gtaoEnabled}>
+                    <span class="field-label">Samples <em>{gtaoSamples}</em></span>
+                    <input class="range" type="range" min="4" max="64" step="1" value={gtaoSamples} disabled={!gtaoEnabled} oninput={onGtaoSamples} />
+                </label>
+                <label class="field" class:disabled={!gtaoEnabled}>
+                    <span class="field-label">Radius <em>{gtaoRadius.toFixed(2)}</em></span>
+                    <input class="range" type="range" min="0.01" max="2" step="0.01" value={gtaoRadius} disabled={!gtaoEnabled} oninput={onGtaoRadius} />
+                </label>
+                <label class="field" class:disabled={!gtaoEnabled}>
+                    <span class="field-label">Intensity <em>{gtaoScale.toFixed(2)}</em></span>
+                    <input class="range" type="range" min="0.1" max="6" step="0.05" value={gtaoScale} disabled={!gtaoEnabled} oninput={onGtaoScale} />
+                </label>
+                <label class="field" class:disabled={!gtaoEnabled}>
+                    <span class="field-label">Thickness <em>{gtaoThickness.toFixed(2)}</em></span>
+                    <input class="range" type="range" min="0.1" max="4" step="0.05" value={gtaoThickness} disabled={!gtaoEnabled} oninput={onGtaoThickness} />
+                </label>
+                <label class="field" class:disabled={!gtaoEnabled}>
+                    <span class="field-label">Distance falloff <em>{gtaoDistanceExponent.toFixed(2)}</em></span>
+                    <input class="range" type="range" min="0.1" max="4" step="0.05" value={gtaoDistanceExponent} disabled={!gtaoEnabled} oninput={onGtaoDistExp} />
+                </label>
+                <label class="field" class:disabled={!gtaoEnabled}>
+                    <span class="field-label">Resolution <em>{gtaoResolution.toFixed(2)}×</em></span>
+                    <input class="range" type="range" min="0.25" max="1" step="0.05" value={gtaoResolution} disabled={!gtaoEnabled} oninput={onGtaoResolution} />
+                </label>
             </div>
         </section>
     {/if}
@@ -466,6 +541,83 @@
     .toggle input { accent-color: #c2410c; cursor: pointer; }
     .toggle.disabled { opacity: 0.5; cursor: not-allowed; }
     .toggle.disabled input { cursor: not-allowed; }
+
+    .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 10px;
+    }
+    .field-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11px;
+        font-weight: 600;
+        color: #3a2e23;
+        letter-spacing: 0.02em;
+    }
+    .field-label em {
+        font-style: normal;
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+        color: #9a3412;
+    }
+    .field.disabled { opacity: 0.45; }
+
+    .select {
+        width: 100%;
+        padding: 7px 10px;
+        border-radius: 10px;
+        background: #fbf6ec;
+        border: 1px solid rgba(58, 46, 35, 0.12);
+        color: #3a2e23;
+        font-size: 12px;
+        font-family: inherit;
+        cursor: pointer;
+        transition: border-color 140ms ease, background 140ms ease;
+    }
+    .select:hover { border-color: rgba(194, 65, 12, 0.35); background: #f5ecdb; }
+    .select:focus { outline: none; border-color: #c2410c; }
+
+    .range {
+        width: 100%;
+        height: 4px;
+        margin: 4px 0;
+        appearance: none;
+        -webkit-appearance: none;
+        background: rgba(58, 46, 35, 0.15);
+        border-radius: 999px;
+        cursor: pointer;
+    }
+    .range:disabled { cursor: not-allowed; }
+    .range::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 15px;
+        height: 15px;
+        border-radius: 999px;
+        background: #c2410c;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 4px rgba(194, 65, 12, 0.45);
+        cursor: pointer;
+    }
+    .range::-moz-range-thumb {
+        width: 15px;
+        height: 15px;
+        border-radius: 999px;
+        background: #c2410c;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 4px rgba(194, 65, 12, 0.45);
+        cursor: pointer;
+    }
+
+    .hint-note {
+        margin: 2px 0 8px;
+        font-size: 10px;
+        line-height: 1.4;
+        color: rgba(58, 46, 35, 0.5);
+    }
 
     .cam-pad {
         margin-top: 6px;

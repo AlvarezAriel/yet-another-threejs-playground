@@ -1,7 +1,32 @@
 import * as THREE from 'three/webgpu';
+import { pass, mrt, output, normalView } from 'three/tsl';
+import { ao } from 'three/addons/tsl/display/GTAONode.js';
+import { denoise } from 'three/addons/tsl/display/DenoiseNode.js';
 import WebGPU from 'three/addons/capabilities/WebGPU.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
+
+export const TONE_MAPPINGS = {
+    None: THREE.NoToneMapping,
+    Linear: THREE.LinearToneMapping,
+    Reinhard: THREE.ReinhardToneMapping,
+    Cineon: THREE.CineonToneMapping,
+    ACESFilmic: THREE.ACESFilmicToneMapping,
+    AgX: THREE.AgXToneMapping,
+    Neutral: THREE.NeutralToneMapping,
+};
+
+export const GTAO_DEFAULTS = {
+    samples: 16,
+    // Occlusion radius in world units. The models are scaled 5x, so this must stay
+    // small: too large and GTAO samples past the contact, darkening a ring out on the
+    // plate while leaving the actual contact bright (reads as a "contact glow").
+    radius: 0.19,
+    thickness: 0.35,
+    distanceExponent: 1.35,
+    scale: 2.05, // "Intensity" — darkening power applied to the AO (pow(ao, scale))
+    resolutionScale: 1,
+};
 
 const HDRI_NAME_PREFIXES = ['Plate', 'Cylinder'];
 function usesHdri(obj) {
@@ -14,6 +39,22 @@ const MAX_TILT = (80 * Math.PI) / 180;
 const MIN_TILT = -0.5;
 const INERTIA_DECAY = 0.88;
 const INERTIA_EPSILON = 0.00005;
+
+// Mirror-glossy plates throw a sharp specular reflection of the bright HDRI right
+// where a model meets them — a "contact glow" that screen-space AO can't darken
+// (it sits on a depth edge with ~no occlusion). Enforcing a roughness floor turns
+// that hotspot into a soft satin sheen, killing the glow. Already-matte materials
+// are above the floor and untouched.
+const MIN_ROUGHNESS = 0.55;
+function tameSpecular(material) {
+    const apply = (m) => {
+        if (!m) return;
+        if ((m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) && typeof m.roughness === 'number') {
+            m.roughness = Math.max(m.roughness, MIN_ROUGHNESS);
+        }
+    };
+    if (Array.isArray(material)) material.forEach(apply); else apply(material);
+}
 
 function toAlbedo(material) {
     return new THREE.MeshBasicMaterial({
@@ -53,7 +94,8 @@ export function createGallery() {
     const renderer = new THREE.WebGPURenderer({ antialias: true, forceWebGL, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.toneMapping = THREE.LinearToneMapping;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1;
     renderer.setClearColor(new THREE.Color(0xfefcf7), 0);
 
     const canvas = renderer.domElement;
@@ -87,7 +129,7 @@ export function createGallery() {
         for (const v of views) applyHdriToView(v);
     }
 
-    new EXRLoader().load(`${import.meta.env.BASE_URL}brown_photostudio_01_4k.exr`, (texture) => {
+    new HDRLoader().load(`${import.meta.env.BASE_URL}church_meeting_room_1k.hdr`, (texture) => {
         texture.mapping = THREE.EquirectangularReflectionMapping;
         envMap = texture;
         applyHdriToAll();
@@ -139,6 +181,7 @@ export function createGallery() {
             const gltf = await loader.loadAsync(view.url);
             gltf.scene.traverse((obj) => {
                 if (!obj.isMesh) return;
+                tameSpecular(obj.material);
                 obj.userData.pbrMaterial = obj.material;
                 obj.userData.basicMaterial = Array.isArray(obj.material)
                     ? obj.material.map(toAlbedo)
@@ -269,6 +312,70 @@ export function createGallery() {
 
     let focusedView = null;
 
+    // --- GTAO post-processing (applied to the focused / detail view only) ---
+    let gtaoEnabled = true;
+    const gtaoParams = { ...GTAO_DEFAULTS };
+    let pipeline = null;
+    let pipelineView = null;
+    let aoNode = null;
+
+    function applyGtaoParams() {
+        if (!aoNode) return;
+        aoNode.samples.value = gtaoParams.samples;
+        aoNode.radius.value = gtaoParams.radius;
+        aoNode.thickness.value = gtaoParams.thickness;
+        aoNode.distanceExponent.value = gtaoParams.distanceExponent;
+        aoNode.scale.value = gtaoParams.scale; // darkening power (pow(ao, scale))
+        aoNode.resolutionScale = gtaoParams.resolutionScale;
+    }
+
+    function disposePipeline() {
+        pipeline?.dispose?.();
+        aoNode?.dispose?.();
+        pipeline = null;
+        aoNode = null;
+        pipelineView = null;
+    }
+
+    function buildPipeline(view) {
+        const scenePass = pass(view.scene, view.camera);
+        scenePass.setMRT(mrt({ output, normal: normalView }));
+        const colorNode = scenePass.getTextureNode('output');
+        const normalNode = scenePass.getTextureNode('normal');
+        const depthNode = scenePass.getTextureNode('depth');
+
+        aoNode = ao(depthNode, normalNode, view.camera);
+        applyGtaoParams();
+
+        // Standard GTAO: denoise the raw AO (edge-aware, so it cleans noise without
+        // bleeding across silhouettes) and multiply it into the colour. AO is 1 in open
+        // areas and < 1 in creases / close proximity, so this darkens exactly where
+        // surfaces are near each other.
+        const aoDenoised = denoise(aoNode.getTextureNode(), depthNode, normalNode, view.camera);
+
+        pipeline = new THREE.RenderPipeline(renderer);
+        pipeline.outputNode = colorNode.mul(aoDenoised.r.add(0.5)); //(1.0).sub(aoDenoised.r);// .mul(-1).add(1); //colorNode.mul(aoDenoised.r);
+        pipelineView = view;
+    }
+
+    function renderFocusedWithGtao(view, winW, winH) {
+        if (!view.modelRoot) return;
+        updateInertia(view);
+        if (pipelineView !== view) {
+            disposePipeline();
+            buildPipeline(view);
+        }
+        const aspect = winW / winH;
+        if (Math.abs(view.camera.aspect - aspect) > 0.001) {
+            view.camera.aspect = aspect;
+            view.camera.updateProjectionMatrix();
+        }
+        renderer.setScissorTest(false);
+        renderer.setViewport(0, 0, winW, winH);
+        renderer.setClearColor(0xfefcf7, 1);
+        pipeline.render();
+    }
+
     function addView({ element, url, name, onStatus, onClick }) {
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 1000);
@@ -307,6 +414,7 @@ export function createGallery() {
     }
 
     function removeView(view) {
+        if (pipelineView === view) disposePipeline();
         if (focusedView === view) focusedView = null;
         view.detachPointers?.();
         io.unobserve(view.cardElement);
@@ -330,6 +438,7 @@ export function createGallery() {
         view.detachPointers?.();
         view.element = view.cardElement;
         view.detachPointers = attachPointers(view, view.cardElement);
+        if (pipelineView === view) disposePipeline();
         if (focusedView === view) focusedView = null;
     }
 
@@ -371,7 +480,8 @@ export function createGallery() {
         renderer.setClearColor(0xfefcf7, 1);
 
         if (focusedView) {
-            renderView(focusedView, winW, winH);
+            if (gtaoEnabled) renderFocusedWithGtao(focusedView, winW, winH);
+            else renderView(focusedView, winW, winH);
         } else {
             for (const view of views) renderView(view, winW, winH);
         }
@@ -406,5 +516,32 @@ export function createGallery() {
         get hdriEnabled() { return hdriEnabled; },
         get hdriBackground() { return hdriBackground; },
         get hdriAffectsAll() { return hdriAffectsAll; },
+
+        // --- Tone mapping ---
+        toneMappings: Object.keys(TONE_MAPPINGS),
+        setToneMapping(name) {
+            renderer.toneMapping = TONE_MAPPINGS[name] ?? THREE.LinearToneMapping;
+            // Direct-render NodeMaterials bake tone mapping into their shader, so
+            // force a recompile; the GTAO pipeline reads toneMapping live but must
+            // be rebuilt to pick up the new output node.
+            for (const view of views) {
+                view.scene.traverse((obj) => {
+                    const mats = Array.isArray(obj.material) ? obj.material : (obj.material ? [obj.material] : []);
+                    for (const m of mats) m.needsUpdate = true;
+                });
+            }
+            disposePipeline();
+        },
+        setExposure(v) { renderer.toneMappingExposure = v; },
+
+        // --- GTAO ---
+        gtaoDefaults: { ...GTAO_DEFAULTS },
+        setGtaoEnabled(v) { gtaoEnabled = !!v; },
+        setGtaoParam(key, value) {
+            if (!(key in gtaoParams)) return;
+            gtaoParams[key] = value;
+            applyGtaoParams();
+        },
+        get gtaoEnabled() { return gtaoEnabled; },
     };
 }
